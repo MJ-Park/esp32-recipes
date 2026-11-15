@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ESP32-CAM 대시보드</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #e3e6ea; --text: #16191d; --muted: #66707b;
+    --accent: #1f6feb; --ok: #1a7f37; --ok-bg: #dafbe1; --bad: #cf222e; --bad-bg: #ffebe9;
+    --warn: #9a6700; --chip: #eef1f4; --video-bg: #0d1014;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1116; --panel: #161b22; --line: #2a313a; --text: #e6edf3; --muted: #8b949e;
+      --accent: #58a6ff; --ok: #3fb950; --ok-bg: #12261a; --bad: #f85149; --bad-bg: #2d1416;
+      --warn: #d29922; --chip: #21262d; --video-bg: #05070a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Segoe UI", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .host { font-family: var(--mono); color: var(--muted); font-size: 13px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; background: var(--chip); color: var(--muted); }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.ok { background: var(--ok-bg); color: var(--ok); }
+  .pill.bad { background: var(--bad-bg); color: var(--bad); }
+  .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; padding: 16px 20px;
+    max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 16px; } header { padding: 12px 16px; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+  .card h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+    margin: 0; padding: 12px 14px 0; font-weight: 600; }
+  .video { position: relative; background: var(--video-bg); border-radius: 10px; overflow: hidden;
+    display: flex; align-items: center; justify-content: center; aspect-ratio: 4 / 3; }
+  .video img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: auto; }
+  .video .overlay { position: absolute; left: 10px; top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .video .tag { font: 12px var(--mono); color: #fff; background: rgba(0,0,0,.55); padding: 2px 8px; border-radius: 6px; }
+  .video .msg { position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #c9d1d9; font-size: 14px; text-align: center; padding: 20px; background: rgba(5,7,10,.7); }
+  .video.down .msg { display: flex; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  button, .btn { appearance: none; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+    padding: 7px 12px; border-radius: 8px; font: inherit; font-weight: 550; cursor: pointer; text-decoration: none; }
+  button:hover, .btn:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line);
+    border-top: 1px solid var(--line); margin-top: 12px; border-radius: 0 0 10px 10px; overflow: hidden; }
+  .metric { background: var(--panel); padding: 10px 14px; }
+  .metric .k { font-size: 12px; color: var(--muted); }
+  .metric .v { font: 600 20px/1.2 var(--mono); font-variant-numeric: tabular-nums; }
+  .metric .v small { font-size: 12px; color: var(--muted); font-weight: 500; margin-left: 2px; }
+  canvas#spark { display: block; width: 100%; height: 48px; }
+  .spark-wrap { padding: 8px 14px 12px; }
+  .spark-wrap .k { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .controls { padding: 6px 14px 14px; display: grid; gap: 10px; }
+  .row { display: grid; grid-template-columns: 96px 1fr 44px; align-items: center; gap: 8px; }
+  .row label { color: var(--muted); font-size: 13px; }
+  .row output { font: 12px var(--mono); text-align: right; color: var(--muted); }
+  .row select { grid-column: 2 / 4; }
+  select { font: inherit; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
+    background: var(--panel); color: var(--text); }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .toggles { display: flex; flex-wrap: wrap; gap: 6px; }
+  .toggle { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: var(--chip); font-size: 13px; cursor: pointer; user-select: none; }
+  .toggle input { accent-color: var(--accent); margin: 0; }
+  .log { font: 12px/1.5 var(--mono); color: var(--muted); padding: 8px 14px 12px; max-height: 140px; overflow: auto; }
+  .log .err { color: var(--bad); }
+  .note { color: var(--warn); font-size: 12px; padding: 0 14px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>ESP32-CAM 대시보드</h1>
+  <span class="host" id="host">—</span>
+  <span class="pill" id="pill">연결 확인 중</span>
+  <span class="spacer"></span>
+  <span class="host" id="sensor"></span>
+</header>
+
+<main>
+  <section>
+    <div class="video down" id="video">
+      <img id="stream" alt="ESP32-CAM 실시간 영상">
+      <div class="overlay"><span class="tag" id="tagRes">—</span><span class="tag" id="tagFps">— fps</span></div>
+      <div class="msg" id="videoMsg">카메라 스트림 대기 중…</div>
+    </div>
+    <div class="toolbar">
+      <a class="btn" id="snap" href="/api/snapshot" download>스냅샷 저장</a>
+      <button id="reload">스트림 재연결</button>
+      <button id="refresh">설정 새로고침</button>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="card">
+      <h2>상태</h2>
+      <div class="metrics">
+        <div class="metric"><div class="k">프레임레이트</div><div class="v" id="mFps">—<small>fps</small></div></div>
+        <div class="metric"><div class="k">해상도</div><div class="v" id="mRes">—</div></div>
+        <div class="metric"><div class="k">프레임 크기</div><div class="v" id="mBytes">—<small>KB</small></div></div>
+        <div class="metric"><div class="k">대역폭</div><div class="v" id="mKbps">—<small>kbps</small></div></div>
+        <div class="metric"><div class="k">HTTP 응답</div><div class="v" id="mLat">—<small>ms</small></div></div>
+        <div class="metric"><div class="k">마지막 프레임</div><div class="v" id="mAge">—<small>ms</small></div></div>
+        <div class="metric"><div class="k">Wi-Fi 신호</div><div class="v" id="mRssi">—<small>dBm</small></div></div>
+        <div class="metric"><div class="k">IP 찾은 방식</div><div class="v" id="mVia" style="font-size:15px">—</div></div>
+      </div>
+      <div class="spark-wrap">
+        <div class="k"><span>FPS 최근 60초</span><span id="sparkMax"></span></div>
+        <canvas id="spark"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>카메라 설정</h2>
+      <div class="controls" id="controls">
+        <div class="row"><label for="framesize">해상도</label>
+          <select id="framesize" data-var="framesize">
+            <option value="15">UXGA 1600×1200</option>
+            <option value="14">SXGA 1280×1024</option>
+            <option value="13">HD 1280×720</option>
+            <option value="12">XGA 1024×768</option>
+            <option value="11">SVGA 800×600</option>
+            <option value="10">VGA 640×480</option>
+            <option value="9">HVGA 480×320</option>
+            <option value="8">CIF 400×296</option>
+            <option value="7">320×320</option>
+            <option value="6">QVGA 320×240</option>
+            <option value="5">240×240</option>
+            <option value="4">HQVGA 240×176</option>
+            <option value="3">QCIF 176×144</option>
+            <option value="1">QQVGA 160×120</option>
+          </select></div>
+        <div class="row"><label for="quality">JPEG 품질</label><input type="range" id="quality" data-var="quality" min="4" max="63"><output></output></div>
+        <div class="row"><label for="brightness">밝기</label><input type="range" id="brightness" data-var="brightness" min="-2" max="2"><output></output></div>
+        <div class="row"><label for="contrast">대비</label><input type="range" id="contrast" data-var="contrast" min="-2" max="2"><output></output></div>
+        <div class="row"><label for="saturation">채도</label><input type="range" id="saturation" data-var="saturation" min="-2" max="2"><output></output></div>
+        <div class="row"><label for="led_intensity">플래시 LED</label><input type="range" id="led_intensity" data-var="led_intensity" min="0" max="255"><output></output></div>
+        <div class="toggles">
+          <label class="toggle"><input type="checkbox" data-var="hmirror">좌우 반전</label>
+          <label class="toggle"><input type="checkbox" data-var="vflip">상하 반전</label>
+          <label class="toggle"><input type="checkbox" data-var="awb">자동 WB</label>
+          <label class="toggle"><input type="checkbox" data-var="aec">자동 노출</label>
+          <label class="toggle"><input type="checkbox" data-var="agc">자동 게인</label>
+        </div>
+      </div>
+      <div class="note">JPEG 품질 값은 낮을수록 화질이 좋고 프레임이 커집니다. 높은 해상도에서는 FPS가 떨어집니다.</div>
+    </div>
+
+    <div class="card">
+      <h2>로그</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fpsHist = [];
+let lastConnected = null;
+
+function log(msg, err) {
+  const el = document.createElement("div");
+  if (err) el.className = "err";
+  el.textContent = `${new Date().toLocaleTimeString()}  ${msg}`;
+  $("log").prepend(el);
+  while ($("log").children.length > 50) $("log").lastChild.remove();
+}
+
+function startStream() {
+  $("stream").src = "/stream?t=" + Date.now();
+}
+
+function setNum(id, v, unit) {
+  $(id).innerHTML = (v ?? "—") + (unit ? `<small>${unit}</small>` : "");
+}
+
+async function pollStats() {
+  try {
+    const s = await (await fetch("/api/stats")).json();
+    $("host").textContent = s.cam_host ? `${s.cam_id ? s.cam_id + " · " : ""}${s.cam_host}` : "카메라 찾는 중…";
+    const via = { udp: "UDP 자동", manual: "수동 지정" }[s.discovered_via] || "—";
+    $("mVia").textContent = s.discovered_via === "udp" && s.last_hello_age_s != null ? `${via} · ${s.last_hello_age_s}s 전` : via;
+    if (s.cam_rssi != null) setNum("mRssi", s.cam_rssi, "dBm");
+    const ok = s.connected;
+    $("pill").className = "pill " + (ok ? "ok" : "bad");
+    $("pill").textContent = ok ? "온라인" : "오프라인";
+    $("video").classList.toggle("down", !ok);
+    $("videoMsg").textContent = ok ? "" : (s.error ? `카메라 연결 실패 — ${s.error}` : "카메라 스트림 대기 중…");
+    if (lastConnected !== null && ok !== lastConnected) log(ok ? "스트림 연결됨" : `스트림 끊김 ${s.error || ""}`, !ok);
+    if (lastConnected === false && ok) startStream();
+    lastConnected = ok;
+
+    const res = s.width ? `${s.width}×${s.height}` : "—";
+    $("mRes").textContent = res; $("tagRes").textContent = res;
+    setNum("mFps", ok ? s.fps.toFixed(1) : "0", "fps");
+    $("tagFps").textContent = `${ok ? s.fps.toFixed(1) : 0} fps`;
+    setNum("mBytes", s.frame_bytes ? (s.frame_bytes / 1024).toFixed(1) : "—", "KB");
+    setNum("mKbps", ok ? s.kbps : "—", "kbps");
+    setNum("mAge", s.last_frame_age_ms ?? "—", "ms");
+    if (s.width) $("video").style.aspectRatio = `${s.width} / ${s.height}`;
+    fpsHist.push(ok ? s.fps : 0);
+    if (fpsHist.length > 60) fpsHist.shift();
+    drawSpark();
+  } catch (e) {
+    $("pill").className = "pill bad"; $("pill").textContent = "서버 응답 없음";
+  }
+}
+
+function drawSpark() {
+  const c = $("spark"), dpr = devicePixelRatio || 1;
+  const w = c.clientWidth, h = c.clientHeight;
+  c.width = w * dpr; c.height = h * dpr;
+  const g = c.getContext("2d"); g.scale(dpr, dpr);
+  const max = Math.max(5, ...fpsHist) * 1.15;
+  $("sparkMax").textContent = `최대 ${Math.max(0, ...fpsHist).toFixed(1)}`;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+  const step = w / 59;
+  const x0 = w - (fpsHist.length - 1) * step;
+  g.beginPath();
+  fpsHist.forEach((v, i) => { const x = x0 + i * step, y = h - 2 - (v / max) * (h - 6); i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  g.strokeStyle = accent; g.lineWidth = 1.75; g.lineJoin = "round"; g.stroke();
+  if (fpsHist.length > 1) {
+    g.lineTo(w, h); g.lineTo(x0, h); g.closePath();
+    g.globalAlpha = .12; g.fillStyle = accent; g.fill();
+  }
+}
+
+async function loadStatus() {
+  try {
+    const r = await (await fetch("/api/status")).json();
+    if (!r.ok) throw new Error(r.error);
+    setNum("mLat", r.latency_ms, "ms");
+    const st = r.status;
+    document.querySelectorAll("[data-var]").forEach((el) => {
+      const v = st[el.dataset.var];
+      if (v === undefined) { el.closest(".row, .toggle").style.display = "none"; return; }
+      if (el.type === "checkbox") el.checked = !!v;
+      else el.value = v;
+      const out = el.parentElement.querySelector("output");
+      if (out) out.textContent = v;
+    });
+    const bits = [`xclk ${st.xclk ?? "?"}MHz`];
+    if (st.psram !== undefined) bits.push(st.psram ? `PSRAM · fb ${st.fb_count}` : "PSRAM 없음");
+    if (st.fw) bits.push(st.fw);
+    $("sensor").textContent = bits.join(" · ");
+    if (st.rssi !== undefined) setNum("mRssi", st.rssi, "dBm");
+  } catch (e) {
+    log(`상태 조회 실패: ${e.message}`, true);
+  }
+}
+
+async function setCtl(name, val) {
+  try {
+    const r = await (await fetch(`/api/control?var=${encodeURIComponent(name)}&val=${encodeURIComponent(val)}`)).json();
+    if (!r.ok) throw new Error(r.error);
+    setNum("mLat", r.latency_ms, "ms");
+    log(`${name} = ${val}`);
+  } catch (e) { log(`${name} 변경 실패: ${e.message}`, true); }
+}
+
+document.querySelectorAll("[data-var]").forEach((el) => {
+  const out = el.parentElement.querySelector("output");
+  if (out) el.addEventListener("input", () => (out.textContent = el.value));
+  el.addEventListener("change", () => setCtl(el.dataset.var, el.type === "checkbox" ? (el.checked ? 1 : 0) : el.value));
+});
+$("reload").onclick = () => { startStream(); log("스트림 재연결"); };
+$("refresh").onclick = loadStatus;
+
+startStream();
+loadStatus();
+pollStats();
+setInterval(pollStats, 1000);
+setInterval(async () => {  // latency ping
+  try { const r = await (await fetch("/api/status")).json(); if (r.ok) setNum("mLat", r.latency_ms, "ms"); } catch {}
+}, 5000);
+log("대시보드 시작");
+</script>
+</body>
+</html>
